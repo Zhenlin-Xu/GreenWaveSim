@@ -1,12 +1,16 @@
 from src.network import Network
+from src.vehicle import Veh
+
+import random
 
 class Simulation(object):
     def __init__(self,
                  env,
+                 numVehInit
                  ):
         self.env = env
-        self.net = Network(env=env)
-
+        self.net = Network(env=env, numVehInit=numVehInit)
+        self.numVehInit = numVehInit
     def initNetwork(self,):
         '''create a square network''' 
         # add nodes
@@ -51,7 +55,20 @@ class Simulation(object):
                                  numLanes=2,
                                  lenLanes=35,) 
 
-    def source(self,):
-        pass
+    def initVehicles(self,):
+        for veh_idx in range(self.numVehInit):
+            linkID = random.choice(list(self.net.links.keys()))
+            num_lane = self.net.links[linkID].numLanes
+            laneID = random.choice([i for i in range(num_lane)])
+            while self.net.links[linkID].link[laneID][0] != 0:
+                linkID = random.choice(self.net.links.keys())
+                num_lane = self.net.links[linkID]
+                laneID = random.choice([i for i in range(num_lane)]) 
+            veh = Veh(env=self.env, net=self.net, vehID=veh_idx, linkID=linkID, laneID=laneID) 
+            self.net.links[linkID].link[laneID][0] = veh                  
+            self.net.vehicles[veh_idx] = veh          
+        print(f"Initialize all {self.numVehInit} vehicles")
+    # def source(self,):
+    #     pass
         
 

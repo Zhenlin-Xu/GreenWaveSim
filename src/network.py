@@ -1,11 +1,14 @@
 from collections import OrderedDict
 
 class Network(object):
-    def __init__(self, env):
+    def __init__(self, env, numVehInit):
         self.env = env
         self.links = OrderedDict()
         self.nodes = OrderedDict()
-    
+        self.vehicles = {}
+        self.numVehNow = numVehInit
+        self.numVehGen = numVehInit
+
     def addNode(self, nodeID, adjacentNodes, isControlled, isExit):
         self.nodes[nodeID] = Node(nodeID=nodeID,
                                   isControlled=isControlled,
@@ -41,10 +44,14 @@ class Link(object):
                  numLanes = 2,
                  lenLanes = 35,):
         self.linkID = linkID
+        self.origin = int(self.linkID.split('O')[0].split('I')[1])
+        self.destin = int(self.linkID.split('O')[1])
+        assert type(self.origin) == int
+        assert type(self.destin) == int
         self.numLanes = numLanes
         self.sizeGrid = 7
         self.numGrids = lenLanes // self.sizeGrid
-        self.link = [["null" for _ in range(self.numGrids)] for _ in range(self.numLanes)]
+        self.link = [[ 0 for _ in range(self.numGrids)] for _ in range(self.numLanes)]
 
     def __repr__(self) -> str:
         return str(self.link)
