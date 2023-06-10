@@ -182,8 +182,13 @@ class Network(object):
             link2 = self.linkCollection[linkId2].binaryMatrix
             link2 = np.flip(link2, axis=1)
             assert link1.shape == link2.shape
-            dualBinaryMatrix = np.concatenate([link1, link2])
+            if (o, d) in [(1,2), (41,1), (32,1), (31,2),]:
+                dualBinaryMatrix = np.concatenate([link2, link1])
+            else: # if (o, d) in [(11,1), (12,2)]:
+                dualBinaryMatrix = np.concatenate([link1, link2])
             assert dualBinaryMatrix.shape == (link1.shape[0]*2, link1.shape[1])
+            if (o, d) == (21,2):
+                dualBinaryMatrix = np.flip(dualBinaryMatrix, axis=1)
             self.matrixCollection[(o,d)] = dualBinaryMatrix.copy()
             (originPos, destinPos) = positions[(o,d)]
             if (o,d) in [(31,2), (32,1)]:
@@ -227,7 +232,7 @@ class Network(object):
             while(not isSpawn):
                 linkId = random.choice(list(self.linkCollection.keys()))
                 laneId = random.randint(a=0, b=self.linkCollection[linkId].numLanes-1)
-                gridId = random.randint(a=0, b=self.linkCollection[linkId].numGrids-1)
+                gridId = random.randint(a=0, b=self.linkCollection[linkId].numGrids//2)
                 if self.linkCollection[linkId].trafficMatrix[laneId][gridId] == 0:
                     # is empty, spawn the car
                     self.addCar(vehId, linkId, laneId, gridId)
@@ -338,7 +343,7 @@ class Link(object):
     
 class Car(object):
     
-    MAX_SPEED = 2 
+    MAX_SPEED = 3 
     IN_TrafficLight = True
     
     def __init__(self, 
@@ -355,7 +360,7 @@ class Car(object):
         self.currentLinkId = linkId
         self.currentLane = laneId
         self.currentGrid = gridId
-        self.currentSpeed = random.randint(a=1, b=Car.MAX_SPEED)
+        self.currentSpeed = random.randint(a=2, b=Car.MAX_SPEED)
         self.randomization = randomization
         
         # binary state indicators
@@ -382,13 +387,14 @@ class Car(object):
                 self.currentSpeed = targetSpeed
                 oldGrid = self.currentGrid
                 self.currentGrid += self.currentSpeed
-                # update the traffic matrix
-                self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][self.currentGrid] = \
-                    self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][oldGrid]
-                self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][oldGrid] = 0
-                # update the binary matrix
-                self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, self.currentGrid] = 1
-                self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, oldGrid] = 0
+                if self.currentSpeed != 0:
+                    # update the traffic matrix
+                    self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][self.currentGrid] = \
+                        self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][oldGrid]
+                    self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][oldGrid] = 0
+                    # update the binary matrix
+                    self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, self.currentGrid] = 1
+                    self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, oldGrid] = 0
                 
                 # update time
                 print(f"{self} driving in link {self.currentLinkId, self.currentGrid} at {self.env.now}")
@@ -402,19 +408,23 @@ class Car(object):
                 # based on the red / green light
                 try:
                     #TODO: implement the logic inside intersection when light is green.
+                    raise NotImplementedError
                     self.__intersection()
-                except simpy.Intercept:
+
+                except simpy.Interrupt:
                     print(self, f"Encounter RED light and top")
                 yield self.env.timeout(10)
-        
+        print("Leave Network")
+        raise NotImplementedError()
+
     def __getSafetyDistance(self, speed) -> int:
         safeDistance = 0
         linkMaxGrid = self.net.linkCollection[self.currentLinkId].numGrids
         # first decide whether it will go outside the link
         if self.currentGrid + speed + 1 > linkMaxGrid:
-            binaryVector = self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, self.currentGrid+1:] 
+            binaryVector = self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, self.currentGrid+1:].copy() 
         else:
-            binaryVector = self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, self.currentGrid+1: self.currentGrid+1+speed]
+            binaryVector = self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, self.currentGrid+1: self.currentGrid+1+speed].copy()
             assert binaryVector.shape == (speed,)
         for idx in range(binaryVector.shape[0]):
             if binaryVector[idx] == 0:
@@ -617,7 +627,7 @@ class TrafficLight(Node):
             self.currentPhase = 0
         else:
             self.currentPhase += 1     
-        print(self, f"change phase {oldPhase} to new phase {self.currentPhase}")
+        # print(self, f"change phase {oldPhase} to new phase {self.currentPhase}")
 
     def __repr__(self):
         return f"TrafficLight{self.nodeId}"
@@ -635,4 +645,4 @@ sim.initToyNetwork()
 # print(len(sim.net.linkCollection))
 # print(len(sim.net.carCollection))
 
-sim.simulate(until=100)
+sim.simulate(until=30)
