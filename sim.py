@@ -1,4 +1,4 @@
-import sys
+import os, sys
 import time
 import random
 import numpy as np
@@ -7,7 +7,9 @@ import pygame
 from collections import OrderedDict
 from typing import Tuple, List
 from utils import Color
+from termcolor import colored
 
+os.system('color')
 
 class Simulation(object):
 
@@ -376,9 +378,9 @@ class Car(object):
             if not self.seeTrafficLight:
                 # in the link, perform cellular automata logic
                 # 1. compare current speed with desired speed:
-                targetSpeed = min(self.currentSpeed, Car.MAX_SPEED)
+                targetSpeed = min(self.currentSpeed+1, Car.MAX_SPEED)
                 # 2. compare current speed with safety distance:
-                targetSpeed = min(targetSpeed, self.__getSafetyDistance(targetSpeed))
+                targetSpeed = min(targetSpeed, Car.MAX_SPEED) #self.__getSafetyDistance(targetSpeed))
                 # 3. randomization:
                 if random.random() < self.randomization:
                     targetSpeed = max(0, targetSpeed-1)
@@ -397,7 +399,8 @@ class Car(object):
                     self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, oldGrid] = 0
                 
                 # update time
-                print(f"{self} driving in link {self.currentLinkId, self.currentGrid} at {self.env.now}")
+                if self.currentSpeed == 0:
+                    print(colored(f"{self} stops in link {self.currentLinkId, self.currentGrid} at {self.env.now}", 'red'))
                 yield self.env.timeout(1)
                 
                 # check status
@@ -407,14 +410,14 @@ class Car(object):
                 # in the intersection
                 # based on the red / green light
                 try:
+                    print(colored(f"{self.__str__()} encounters intersection", 'red'))
                     #TODO: implement the logic inside intersection when light is green.
                     raise NotImplementedError
                     self.__intersection()
-
                 except simpy.Interrupt:
-                    print(self, f"Encounter RED light and top")
+                    print(colored(f"{self.__str__()} encounters RED light and stops", 'red'))
                 yield self.env.timeout(10)
-        print("Leave Network")
+        print(colored(f"{self.__str__()} leaves Network", 'green'))
         raise NotImplementedError()
 
     def __getSafetyDistance(self, speed) -> int:
