@@ -7,48 +7,54 @@ import pygame
 from pygame.locals import *
 from collections import OrderedDict
 from typing import Tuple, List
-from utils import Color
+from utils import Color, logging
 from termcolor import colored
 
 os.system('color')
 
 class Simulation(object):
 
-    pauseTime = 0.3
-
     def __init__(self,
                  env,
+                 screen_width :int=800,
+                 screen_height:int=600,
+                 pauseTime:float  =0.05,
+                 numInitVehs:int  =50,
                 ):
-        self.env = env
         pygame.init()
-        self.screen_width = 800
-        self.screen_height = 600
-        self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
-        self.net = Network(env, self.screen)
-        self.action = self.env.process(self.render())
-        # simulation setup
         self.T = None
+        self.pauseTime = pauseTime      # control the GUI update speed
+        self.numInitVehs = numInitVehs  # #vehicles at the initialization
+        self.env = env
+        self.screen_width = screen_width
+        self.screen_height = screen_height
+        self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
+        self.net = Network(env, screen=self.screen, dt=pauseTime)
+        self.action = self.env.process(self.render())
 
     def simulate(self, until):
+        """
+        A wrapper for the simpy.Environment.run(until:int)
+        """
         self.T = until
         self.env.run(until)
-        print(f"LOGGING: finish the simulation in {self.T} seconds")
+        logging(msg=f"LOGGING: finish the simulation in {self.T} seconds",
+                color='green')
 
     def render(self):
-        # a simulation process for:
-        # 1. checking game events
+        '''
+        Render for the simulation object itself:
+        controlling for the distroy of the windows
+        '''
         while True:
-            # if self.env.now < self.T:
-            #     pygame.quit()
-            #     sys.quit()
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     sys.quit()
-            # time.sleep(Simulation.pauseTime)
+            time.sleep(self.pauseTime)
             yield self.env.timeout(1)
         
-    def initToyNetwork(self, numInitVehs=1):
+    def initToyNetwork(self):
         '''
         initialize a network with the shape of ++ with traffic
         8 nodes | 14 links
@@ -60,6 +66,7 @@ class Simulation(object):
         for nodeId, nodePos in zip(nodeIds, nodePositions):
             self.net.addTrafficLightNode(nodeId, position=nodePos, isExit=False, isControlled=True)
         assert len(self.net.nodeCollection) == 2
+
         # set the directions of inflow/outflow 
         directionIds = [(11,2,32,41), (12,21,31,1)]
         for nodeId, nodeDirection in zip(nodeIds, directionIds):
@@ -82,7 +89,8 @@ class Simulation(object):
         for nodeId, nodePos in zip(nodeIds, nodePositions):
             self.net.addNode(nodeId, position=nodePos, isExit=True, isControlled=False)
         assert len(self.net.nodeCollection) == 2 + 6
-        print(colored(f"LOGGING: initialize {len(self.net.nodeCollection):2.0f} nodes into network", 'green'))
+        logging(msg=f"LOGGING: initialize {len(self.net.nodeCollection):2.0f} nodes into network", 
+                color='green')
 
         # initialize all the links
         linkODs = [(1,2)]
@@ -103,7 +111,8 @@ class Simulation(object):
         assert len(self.net.linkCollection) == 2 + 6 + 6
         assert len(self.net.inflowLinkCollection) == 6
         assert len(self.net.outflowLinkCollection) == 6
-        print(colored(f"LOGGING: initialize {len(self.net.linkCollection):2.0f} links into network", 'green'))
+        logging(msg=f"LOGGING: initialize {len(self.net.linkCollection):2.0f} links into network", 
+                color='green')
 
         # set the connected links for each node
         for nodeId, node in self.net.nodeCollection.items():
@@ -116,10 +125,15 @@ class Simulation(object):
             self.net.nodeCollection[nodeId].inflowLinkIds  = inflowLinkIds
             self.net.nodeCollection[nodeId].outflowLinkIds = outflowLinkIds
         # initialize the vehicles into network
-        self.net.initCars(numInitVehs)
-        assert len(self.net.carCollection) == numInitVehs
-        assert self.net.numVehInSystem == numInitVehs
-        print(colored(f"LOGGING: initialize {numInitVehs:2.0f} cars into network", 'green'))
+        self.net.initCars(self.numInitVehs)
+        assert len(self.net.carCollection) == self.numInitVehs
+        assert self.net.numVehInSystem == self.numInitVehs
+        logging(msg=f"LOGGING: initialize {self.numInitVehs:2.0f} cars into network",
+                color='green')
+
+    #TODO:
+    def initpNeumaNetwork(self, numInitVehs=25):
+        pass
 
 class Network(object):
        
@@ -130,7 +144,6 @@ class Network(object):
                  width=800,
                  dt=0.1):
 
-        # Pygame setups
         self.screen = screen
         self.width = width
         self.height = height
@@ -146,7 +159,6 @@ class Network(object):
         self.matrixCollection = OrderedDict()
         self.numVehInSystem = 0
         self.totalVeh = 0 
-
         # discrete simulation process
         self.env = env
         self.dt  = dt
@@ -161,15 +173,31 @@ class Network(object):
             yield self.env.timeout(1)
 
     def __gameStep(self):
+        ##################
         # draw background:
+        ##################
         self.screen.fill(self.backgroundColor)
+        
+        #############
         # draw nodes:
+        #############
         for nodeId, node in self.nodeCollection.items():
             pygame.draw.rect(self.screen, Color.WHITE, node.center2corner())
+        
+        #########################
+        # draw the traffic light:
+        #########################
+        for tfId, tf in self.trafficLightCollection.items():
+            lights = tf.lightPositions()
+            for direction, positions in lights.items():
+                pygame.draw.rect(self.screen, Color.RED, positions)
+            lights = tf.getTrafficLightConditions()
+            for direction, positions in lights.items():
+                pygame.draw.rect(self.screen, Color.GREEN, positions)        
+        
+        ##################################
         # draw link and vehicles together:
-            # 1. collect all binaryMatrix
-            # 2. assign the position of rect grid
-            # 3. plot
+        ##################################
         positions = {
             (1 , 2): ((self.width//2-Link.GRIDSIZE*25, self.height//2-Node.SIZE//2), (self.width//2+Link.GRIDSIZE*25, self.height//2+Node.SIZE//2)),
             (11, 1): ((self.width//2-Link.GRIDSIZE*25-Node.SIZE, self.height//2-Node.SIZE//2-Link.GRIDSIZE*50), (self.width//2-Link.GRIDSIZE*25, self.height//2-Node.SIZE//2)),
@@ -180,43 +208,91 @@ class Network(object):
             (41, 1): ((self.width//2-Link.GRIDSIZE*75-Node.SIZE, self.height//2-Node.SIZE//2), (self.width//2-Link.GRIDSIZE*25-Node.SIZE, self.height//2+Node.SIZE//2))
         }
         for (o, d), (linkId1, linkId2) in self.linkPairCollection.items():        
-            link1 = self.linkCollection[linkId1].binaryMatrix
-            link2 = self.linkCollection[linkId2].binaryMatrix
-            link2 = np.flip(link2, axis=1)
-            assert link1.shape == link2.shape
-            if (o, d) in [(1,2), (41,1), (32,1), (31,2),]:
-                dualBinaryMatrix = np.concatenate([link2, link1])
-            else: # if (o, d) in [(11,1), (12,2)]:
-                dualBinaryMatrix = np.concatenate([link1, link2])
-            assert dualBinaryMatrix.shape == (link1.shape[0]*2, link1.shape[1])
-            if (o, d) == (21,2):
-                dualBinaryMatrix = np.flip(dualBinaryMatrix, axis=1)
-            self.matrixCollection[(o,d)] = dualBinaryMatrix.copy()
-            (originPos, destinPos) = positions[(o,d)]
-            if (o,d) in [(31,2), (32,1)]:
-                dualBinaryMatrix = np.flip(dualBinaryMatrix, axis=1)
+            if (o, d) in [ (1 , 2), (41, 1), 
+                           (21, 2), 
+                           (11, 1), (12, 2),
+                           (31, 2), (32, 1),
+                          ]: 
+                # retrieve the binary representation of the bi-directional roads:
+                link1 = self.linkCollection[linkId1].binaryMatrix
+                link2 = self.linkCollection[linkId2].binaryMatrix
+                # concatenate the two raods together, 4 cases (orientations):
+                # Case1: from left to right
+                if (o, d) in [(1,2),(41,1)]:
+                    link2 = np.flip(link2)
+                    assert link1.shape == link2.shape
+                    dualBinaryMatrix = np.concatenate([link2, link1])
+                    rows = 6
+                    cols = 50
+                # Case2: from right to left
+                elif (o, d) in [(21,2)]:
+                    link1 = np.flip(link1)
+                    assert link1.shape == link2.shape
+                    dualBinaryMatrix = np.concatenate([link1, link2])
+                    rows = 6
+                    cols = 50
+                # Case3: from top to down
+                elif (o, d) in [(11,1), (12,2)]:
+                    link1 = np.rot90(link1, k=3)
+                    link2 = np.rot90(link2, k=1)
+                    assert link1.shape == link2.shape
+                    dualBinaryMatrix = np.concatenate([link1, link2], axis=1)
+                    rows = 50
+                    cols = 6 
+                # Case4: from down to top                   
+                elif (o, d) in [(31,2), (32,1)]:
+                    link1 = np.rot90(link1, k=1)
+                    link2 = np.rot90(link2, k=3)
+                    assert link1.shape == link2.shape
+                    dualBinaryMatrix = np.concatenate([link2, link1], axis=1)                    
+                    rows = 50
+                    cols = 6
+                # store all concatenated matrices:
                 self.matrixCollection[(o,d)] = dualBinaryMatrix.copy()
-            if (o,d) in [(11,1), (12,2), (31,2), (32,1)]:
-                rows = 50
-                cols = 6
-            else:
-                rows = 6
-                cols = 50
-            if abs(originPos[0]-destinPos[0]) > abs(originPos[1]-destinPos[1]):
-                # 横长竖短
-                size = (50*Link.GRIDSIZE, Node.SIZE)
-            else:
-                dualBinaryMatrix = dualBinaryMatrix.T
-                self.matrixCollection[(o,d)] = dualBinaryMatrix
-                # 横短竖长
-                size = (Node.SIZE, 50*Link.GRIDSIZE)
-            topLeftCornerPos = positions[(o,d)][0]
-            self.__draw_grid(o, d, rows, cols, topLeftCornerPos)
+                topLeftCornerPos = positions[(o,d)][0]
+                self.__draw_grid(o, d, rows, cols, topLeftCornerPos)
+            # display text information in the left-top corner:
 
-        # display TEXT information on the left-top corner:
-        font_size = 18
-        font_color = (255, 255, 255)
-        font = pygame.font.SysFont("Consolas", font_size)
+        #######################
+        # add text information:
+        #######################  
+        self.__draw_text()
+        pygame.display.flip()
+
+    def __draw_grid(self, o, d, rows, cols, topLeftCornersPos):
+        """
+        Display the matrix for each couple of links:
+        @ o: origin id
+        @ d: destin id
+        @ rows: #rows: depends on the shape of matrix
+        @ cols: #cols: depends on the shape of matrix
+        @ topLeftCornersPos: the position of left-top corner point
+        """
+        # retrieve the position and matrix:
+        offset_x, offset_y = topLeftCornersPos
+        matrix = self.matrixCollection[(o,d)]
+        # draw each cell in the matrix row by col
+        for row in range(rows):
+            for col in range(cols):
+                x = col * Link.GRIDSIZE + offset_x
+                y = row * Link.GRIDSIZE + offset_y
+                # specifiy the red cell for the existence of vehicle
+                if matrix[row, col] == 1:
+                    color = Color.PINK
+                    pygame.draw.rect(self.screen, color, (x, y, Link.GRIDSIZE, Link.GRIDSIZE))
+                # otherwise: black cell for empty cell
+                else:
+                    color = Color.BLACK
+                    pygame.draw.rect(self.screen, color, (x, y, Link.GRIDSIZE, Link.GRIDSIZE), width=0)
+
+    def __draw_text(self, 
+                    font_name='Consolas',
+                    font_size=18, 
+                    font_color=Color.WHITE,):
+        """
+        Display TEXT information on the left-top corner of window:
+        """
+        font = pygame.font.SysFont(font_name, font_size)
         textLine1 = f"#Time: {self.env.now}"
         textLine2 = f"#vehicles in system: {self.numVehInSystem}"
         text_surface1 = font.render(textLine1, True, font_color)
@@ -227,34 +303,23 @@ class Network(object):
         text_rect2.topleft = (10, 25)
         self.screen.blit(text_surface1, text_rect1)
         self.screen.blit(text_surface2, text_rect2)
-        pygame.display.flip()
 
-    def __draw_grid(self, o, d, rows, cols, topLeftCornersPos):
-        offset_x, offset_y = topLeftCornersPos
-        matrix = self.matrixCollection[(o,d)]
-        for row in range(rows):
-            for col in range(cols):
-                x = col * Link.GRIDSIZE + offset_x
-                y = row * Link.GRIDSIZE + offset_y
-                if matrix[row, col] == 1:
-                    color = Color.RED
-                    pygame.draw.rect(self.screen, color, (x, y, Link.GRIDSIZE, Link.GRIDSIZE))
-                else:
-                    color = Color.BLACK
-                    pygame.draw.rect(self.screen, color, (x, y, Link.GRIDSIZE, Link.GRIDSIZE), width=0)
-
-    def initCars(self, numInitVehs=3):
+    def initCars(self, numInitVehs):
         for vehId in range(numInitVehs):
             isSpawn = False
             while(not isSpawn):
-                linkId = 'I11O1' # random.choice(list(self.linkCollection.keys()))
+                linkId = random.choice(list(self.linkCollection.keys()))
                 laneId = random.randint(a=0, b=self.linkCollection[linkId].numLanes-1)
-                gridId = random.randint(a=0, b=self.linkCollection[linkId].numGrids//2)
+                gridId = random.randint(a=0, b=self.linkCollection[linkId].numGrids-10)
                 if self.linkCollection[linkId].trafficMatrix[laneId][gridId] == 0:
                     # is empty, spawn the car
                     self.addCar(vehId, linkId, laneId, gridId)
                     isSpawn = True
-        
+
+    #TODO:
+    def genCars(self,):
+        pass
+
     def addCar(self, vehId, linkId, laneId, gridId):
         car = Car(self.env, self, vehId, linkId, laneId, gridId)
         self.numVehInSystem += 1
@@ -268,7 +333,7 @@ class Network(object):
         self.nodeCollection[nodeId] = node
         
     def addTrafficLightNode(self, nodeId:int, position:Tuple[int,int], isExit:bool, isControlled:bool,):
-        trafficLight = TrafficLight(nodeId, self.env, self, position, isExit, isControlled, greenTimes=[8,6,4,4])
+        trafficLight = TrafficLight(nodeId, self.env, self, position, isExit, isControlled, greenTimes=[25,25,25,25])
         self.nodeCollection[nodeId] = trafficLight
         self.trafficLightCollection[nodeId] = trafficLight
 
@@ -283,7 +348,6 @@ class Network(object):
 class Node(object):
     
     SIZE = 24
-    COLOR = (0,0,0)
 
     def __init__(self, 
                  id:int, 
@@ -296,7 +360,6 @@ class Node(object):
         self.y = position[1]
         self.inflowLinkIds  = []
         self.outflowLinkIds = []
-
         
         # binary bits to indicator status
         self.isExit = isExit
@@ -342,20 +405,19 @@ class Link(object):
         assert self.binaryMatrix.shape == (self.numLanes, self.numGrids)
         
         # connected nodes
-        self.originNodeId = None
-        self.destinNodeId = None
+        self.originNodeId = originNodeId
+        self.destinNodeId = destinNodeId
         self.type = type # 0: normal, 1:inflow, -1:outflow
 
-    #TODO: identify the front car for the lane
     def getFrontCarLane(self, numLane,):
         isFront = False
         veh = None
 
         for idx in [-1, -2, -3]:
             if isinstance(self.trafficMatrix[numLane][idx], Car):
-                veh = self.trafficMatrix[numLane][idx]
                 isFront = True
-                print(veh)
+                veh = self.trafficMatrix[numLane][idx]
+                # veh.seeTrafficLight = True
                 break
                 
         return isFront, veh
@@ -390,17 +452,17 @@ class Car(object):
         self.randomization = randomization
         
         # binary state indicators
-        self.seeTrafficLight = None
+        self.seeTrafficLight = False
+        self.seeRedLight = True
         self.leaveNetwork = None
         self.checkStatus()
-        
+        self.nextLinkId = None
         # setup the process for event
         self.action = self.env.process(self.run())
         
     def run(self):
         while (not self.leaveNetwork):
             # if not self.seeTrafficLight:
-           
             if not self.seeTrafficLight:
                 # in the link, perform cellular automata logic
                 # 1. compare current speed with desired speed:
@@ -430,28 +492,33 @@ class Car(object):
                 # check status
                 self.checkStatus()
             else:
-                try:
-                    # cross when green light is on:
-                    print(colored(f"{self.__str__()} encounters GREEN light and passes", 'green'))
-                    yield self.env.process(self.__intersection())
-
-                except simpy.Interrupt:
-                    # print(I.cause)
-                    print(colored(f"{self.__str__()} encounters RED light and stops", 'red'))
-
-
-                yield self.env.timeout(1)
+                if self.seeRedLight:
+                    currentLink = self.net.linkCollection[self.currentLinkId]
+                    currentNodeId = currentLink.destinNodeId
+                    currentNode = self.net.nodeCollection[currentNodeId]
+                    redLightTime = currentNode.greenTimes[currentNode.currentPhase]
+                    self.currentSpeed = 0
+                    yield self.env.timeout(1)
+                else: # see green light:
+                    passTime = 1
+                    yield self.env.timeout(passTime)
+                    if self.net.linkCollection[self.nextLinkId].trafficMatrix[self.currentLane][0] == 0:
+                        self.net.linkCollection[self.nextLinkId].trafficMatrix[self.currentLane][0] = self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][self.currentGrid]
+                        self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][self.currentGrid] = 0
+                        self.net.linkCollection[self.nextLinkId].binaryMatrix[self.currentLane][0] = 1
+                        self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane][self.currentGrid] = 0
+                        self.currentLinkId = self.nextLinkId
+                        self.currentGrid = 0
+                        self.seeTrafficLight = False
+                        self.seeRedLight = False 
                 self.checkStatus()
-
+        
         print(colored(f"{self.__str__()} leaves Network", 'green'))
         self.net.carCollection.pop(self.vehId)
         self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][self.currentGrid] = 0
         self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, self.currentGrid] = 0
         self.net.numVehInSystem -= 1
-        # del self
-
-    def __intersection(self,):
-        yield self.env.timeout(3)
+        del self
 
     def __getSafetyDistance(self, speed) -> int:
         safeDistance = 0
@@ -484,14 +551,15 @@ class Car(object):
         '''
         currentLinkType = self.net.linkCollection[self.currentLinkId].type
         self.leaveNetwork = self.__isMyselfFrontCar() and self.__isStepOutsideLink() and currentLinkType == Link.OUT
-        self.seeTrafficLight = self.__isMyselfFrontCar() and self.__isStepOutsideLink()
+        self.seeTrafficLight = True if self.currentGrid + 3 >= self.net.linkCollection[self.currentLinkId].numGrids else False
+        # self.__isMyselfFrontCar() and self.__isStepOutsideLink()
         
     def __isStepOutsideLink(self,) -> bool:
         # check whether self will step outside of the link in the next step:
         # by comparing the current speed and remaining grids
         isStepOutsideLink = False
         linkMaxGrid = self.net.linkCollection[self.currentLinkId].numGrids
-        if self.currentGrid + self.currentSpeed + 1 > linkMaxGrid:
+        if self.currentGrid >= linkMaxGrid-3:
             isStepOutsideLink = True
         return isStepOutsideLink
         
@@ -528,7 +596,13 @@ class TrafficLight(Node):
         self.env = env
         self.action = self.env.process(self.trafficLightControl())
 
+        self.north = ((self.x-Node.SIZE//3, self.y-Node.SIZE//2), (Node.SIZE//3, Node.SIZE//6))
+        self.south = ((self.x, self.y+Node.SIZE//3), (Node.SIZE//3, Node.SIZE//6))
+        self.west  = ((self.x-Node.SIZE//2, self.y), (Node.SIZE//6, Node.SIZE//3))
+        self.east  = ((self.x+Node.SIZE//3, self.y-Node.SIZE//3), (Node.SIZE//6, Node.SIZE//3))
+
     def trafficLightControl(self,):
+        # retrieve all links and nodes necessary:
         westNodeId = self.direction['W']
         eastNodeId = self.direction['E']
         northNodeId= self.direction['N']
@@ -541,183 +615,330 @@ class TrafficLight(Node):
         eastLink = self.net.linkCollection[eastInLinkId]
         northLink= self.net.linkCollection[northInLinkId]
         southLink= self.net.linkCollection[southInLinkId]
-
-        while True:    
-            if self.currentPhase == 0:
-                # North-south straight green
-                # set the front cars in other 3 phases to stop:
-                # west-straight
-                (isFront, car) = westLink.getFrontCarLane(numLane=1)
+        
+        # control the vehicle encountering the traffic light
+        while True:
+            if self.currentPhase == 0: # North-south straight green
+                # North inflow
+                isFront, car = northLink.getFrontCarLane(0) # red
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-                # west-turnleft
-                isFront, car = westLink.getFrontCarLane(numLane=0)
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(eastNodeId) 
+                isFront, car = northLink.getFrontCarLane(1) # green
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-                # east-straight
-                isFront, car = eastLink.getFrontCarLane(numLane=1)
+                    car.seeRedLight = False
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(southNodeId) 
+                isFront, car = northLink.getFrontCarLane(2) # green
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-                # east-turnleft
-                isFront, car = eastLink.getFrontCarLane(numLane=0)
+                    car.seeRedLight = False
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(westNodeId) 
+                # South inflow
+                isFront, car = southLink.getFrontCarLane(0) # red
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-                # north-turnleft
-                isFront, car = northLink.getFrontCarLane(numLane=0)
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(westNodeId) 
+                isFront, car = southLink.getFrontCarLane(1) # green
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-                # south-turnleft
-                isFront, car = southLink.getFrontCarLane(numLane=0)
+                    car.seeRedLight = False
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(northNodeId) 
+                isFront, car = southLink.getFrontCarLane(2) # green
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-            elif self.currentPhase == 1:
-                # North-south turn-left green
-                # set the front cars in other 3 phases to stop:
-                # west-straight
-                isFront, car = westLink.getFrontCarLane(numLane=1)
+                    car.seeRedLight = False
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(eastNodeId) 
+                # Western inflow
+                isFront, car = westLink.getFrontCarLane(0) # red
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-                # west-turnleft
-                isFront, car = westLink.getFrontCarLane(numLane=0)
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(northNodeId) 
+                isFront, car = westLink.getFrontCarLane(1) # red
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-                # east-straight
-                isFront, car = eastLink.getFrontCarLane(numLane=1)
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(eastNodeId) 
+                isFront, car = westLink.getFrontCarLane(2) # green
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-                # east-turnleft
-                isFront, car = eastLink.getFrontCarLane(numLane=0)
+                    car.seeRedLight = False
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(southNodeId) 
+                # Eastern inflow
+                isFront, car = eastLink.getFrontCarLane(0) # red
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-                # north-straight
-                isFront, car = northLink.getFrontCarLane(numLane=1)
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True                
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(southNodeId) 
+                isFront, car = eastLink.getFrontCarLane(1) # red
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-                # south-straight
-                isFront, car = southLink.getFrontCarLane(numLane=0)
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(westNodeId) 
+                isFront, car = eastLink.getFrontCarLane(2) # green
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
+                    car.seeRedLight = False
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(northNodeId) 
 
-            elif self.currentPhase == 2:
-                # West-east straight green
-                # set the front cars in other 3 phases to stop:
-                # north-straight
-                isFront, car = northLink.getFrontCarLane(numLane=1)
+            elif self.currentPhase == 1: # North-south turnleft green
+                # North inflow
+                isFront, car = northLink.getFrontCarLane(0) # green
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-                # north-turnleft
-                isFront, car = northLink.getFrontCarLane(numLane=0)
+                    car.seeRedLight = False
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(eastNodeId) 
+                isFront, car = northLink.getFrontCarLane(1) # red
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-                # south-straight
-                isFront, car = southLink.getFrontCarLane(numLane=1)
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(southNodeId) 
+                isFront, car = northLink.getFrontCarLane(2) # green
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-                # south-turnleft
-                isFront, car = southLink.getFrontCarLane(numLane=0)
+                    car.seeRedLight = False
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(westNodeId) 
+                # South inflow
+                isFront, car = southLink.getFrontCarLane(0) # green
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-                # west-turnleft
-                isFront, car = northLink.getFrontCarLane(numLane=0)
+                    car.seeRedLight = False
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(westNodeId) 
+                isFront, car = southLink.getFrontCarLane(1) # red
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-                # east-turnleft
-                isFront, car = southLink.getFrontCarLane(numLane=0)
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(northNodeId) 
+                isFront, car = southLink.getFrontCarLane(2) # green
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-            elif self.currentPhase == 3:
-                # West-east turn-left green
-                # set the front cars in other 3 phases to stop:
-                # perform green time in this phase
-                # north-straight
-                isFront, car = northLink.getFrontCarLane(numLane=1)
+                    car.seeRedLight = False
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(eastNodeId) 
+                # Western inflow
+                isFront, car = westLink.getFrontCarLane(0) # red
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-                # north-turnleft
-                isFront, car = northLink.getFrontCarLane(numLane=0)
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(northNodeId) 
+                isFront, car = westLink.getFrontCarLane(1) # red
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-                # south-straight
-                isFront, car = southLink.getFrontCarLane(numLane=1)
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(eastNodeId) 
+                isFront, car = westLink.getFrontCarLane(2) # green
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-                # south-turnleft
-                isFront, car = southLink.getFrontCarLane(numLane=0)
+                    car.seeRedLight = False
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(southNodeId) 
+                # Eastern inflow
+                isFront, car = eastLink.getFrontCarLane(0) # red
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-                # west-straight
-                isFront, car = northLink.getFrontCarLane(numLane=1)
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(southNodeId) 
+                isFront, car = eastLink.getFrontCarLane(1) # red
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
-
-                # east-straight
-                isFront, car = southLink.getFrontCarLane(numLane=1)
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(westNodeId) 
+                isFront, car = eastLink.getFrontCarLane(2) # green
                 if isFront:
-                    print(car, "is forced to stop at red light")
-                    car.action.interrupt()
+                    car.seeRedLight = False
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(northNodeId) 
 
-            yield self.env.timeout(1) # self.greenTimes[self.currentPhase])
-            # step forward with 1 second
+            elif self.currentPhase == 2: # West-East straight green
+                # North inflow
+                isFront, car = northLink.getFrontCarLane(0) # red
+                if isFront:
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(eastNodeId) 
+                isFront, car = northLink.getFrontCarLane(1) # red
+                if isFront:
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(southNodeId) 
+                isFront, car = northLink.getFrontCarLane(2) # green
+                if isFront:
+                    car.seeRedLight = False
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(westNodeId) 
+                # South inflow
+                isFront, car = southLink.getFrontCarLane(0) # red
+                if isFront:
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(westNodeId) 
+                isFront, car = southLink.getFrontCarLane(1) # red
+                if isFront:
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(northNodeId) 
+                isFront, car = southLink.getFrontCarLane(2) # green
+                if isFront:
+                    car.seeRedLight = False
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(eastNodeId) 
+                # Western inflow
+                isFront, car = westLink.getFrontCarLane(0) # red
+                if isFront:
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(northNodeId) 
+                isFront, car = westLink.getFrontCarLane(1) # green
+                if isFront:
+                    car.seeRedLight = False
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(eastNodeId) 
+                isFront, car = westLink.getFrontCarLane(2) # green
+                if isFront:
+                    car.seeRedLight = False
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(southNodeId) 
+                # Eastern inflow
+                isFront, car = eastLink.getFrontCarLane(0) # red
+                if isFront:
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(southNodeId) 
+                isFront, car = eastLink.getFrontCarLane(1) # green
+                if isFront:
+                    car.seeRedLight = False
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(westNodeId) 
+                isFront, car = eastLink.getFrontCarLane(2) # green
+                if isFront:
+                    car.seeRedLight = False
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(northNodeId) 
+
+            elif self.currentPhase == 3: # West-East turnleft green
+                # North inflow
+                isFront, car = northLink.getFrontCarLane(0) # red
+                if isFront:
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(eastNodeId) 
+                isFront, car = northLink.getFrontCarLane(1) # red
+                if isFront:
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(southNodeId) 
+                isFront, car = northLink.getFrontCarLane(2) # green
+                if isFront:
+                    car.seeRedLight = False
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(westNodeId) 
+                # South inflow
+                isFront, car = southLink.getFrontCarLane(0) # red
+                if isFront:
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(westNodeId) 
+                isFront, car = southLink.getFrontCarLane(1) # red
+                if isFront:
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(northNodeId) 
+                isFront, car = southLink.getFrontCarLane(2) # green
+                if isFront:
+                    car.seeRedLight = False
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(eastNodeId) 
+                # Western inflow
+                isFront, car = westLink.getFrontCarLane(0) # green
+                if isFront:
+                    car.seeRedLight = False
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(northNodeId) 
+                isFront, car = westLink.getFrontCarLane(1) # red
+                if isFront:
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(eastNodeId) 
+                isFront, car = westLink.getFrontCarLane(2) # green
+                if isFront:
+                    car.seeRedLight = False
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(southNodeId) 
+                # Eastern inflow
+                isFront, car = eastLink.getFrontCarLane(0) # green
+                if isFront:
+                    car.seeRedLight = False
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(southNodeId) 
+                isFront, car = eastLink.getFrontCarLane(1) # red
+                if isFront:
+                    car.currentSpeed = 0
+                    car.seeRedLight = True
+                    car.seeTrafficLight = True
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(westNodeId) 
+                isFront, car = eastLink.getFrontCarLane(2) # green
+                if isFront:
+                    car.seeRedLight = False
+                    car.nextLinkId = 'I'+str(self.nodeId)+'O'+str(northNodeId) 
+                
+            # step forward 1 second
+            yield self.env.timeout(1)
             self.phaseTime += 1
             if self.phaseTime == self.phaseTotalTime:
-                self.__stepForwardPhase()
+                # loop through all four phases: 0 -> 1 -> 2 -> 3 -> 0 ...
+                oldPhase = self.currentPhase
+                if self.currentPhase == 3:
+                    self.currentPhase = 0
+                else:
+                    self.currentPhase += 1     
+                # reset the phaseTime and phaseTotalTime
+                self.phaseTime = 0
+                self.phaseTotalTime = self.greenTimes[self.currentPhase]
+                print(self, f"change phase {oldPhase} to new phase {self.currentPhase} at {self.env.now}")       
 
-    # helper function for trafficLight class  
-    def __stepForwardPhase(self):
-        # loop through all four phases: 0 -> 1 -> 2 -> 3 -> 0 ...
-        oldPhase = self.currentPhase
-        if self.currentPhase == 3:
-            self.currentPhase = 0
-        else:
-            self.currentPhase += 1     
-        # reset the phaseTime and phaseTotalTime
-        self.phaseTime = 0
-        self.phaseTotalTime = self.greenTimes[self.currentPhase]
-        print(self, f"change phase {oldPhase} to new phase {self.currentPhase}")
+    def lightPositions(self):
+        '''
+        Return a dictionary that contains the base positions of traffic light 
+        Later, the green light is applied to update them
+        '''
+        return {'N':self.north, 'S':self.south, 'W':self.west, 'E':self.east,}
+    
+    def getTrafficLightConditions(self,):
+        """
+        Return back a dictionary that contains the position of each green light
+        """
+        lights = None
+        if self.currentPhase == 0:
+        # NS-turnleft
+            lights = {
+                'N': ((self.x-Node.SIZE//3, self.y-Node.SIZE//2), (Node.SIZE//6, Node.SIZE//6)),
+                'S': ((self.x+Node.SIZE//6, self.y+Node.SIZE//3), (Node.SIZE//6, Node.SIZE//6)),
+            }
+        elif self.currentPhase == 1: 
+        # NS-straight
+            lights = {
+                'N': ((self.x-Node.SIZE//6, self.y-Node.SIZE//2), (Node.SIZE//6, Node.SIZE//6)),
+                'S': ((self.x, self.y+Node.SIZE//3), (Node.SIZE//6, Node.SIZE//6)),
+            }
+        elif self.currentPhase == 2:
+        # WE-straight
+            lights = {
+                'W': ((self.x-Node.SIZE//2, self.y+Node.SIZE//6), (Node.SIZE//6, Node.SIZE//6)),
+                'E': ((self.x+Node.SIZE//2, self.y-Node.SIZE//6), (Node.SIZE//6, Node.SIZE//6)),
+            }
+        elif self.currentPhase == 3:
+            lights = {
+                'W': ((self.x-Node.SIZE//2, self.y), (Node.SIZE//6, Node.SIZE//6)),
+                'E': ((self.x+Node.SIZE//2, self.y), (Node.SIZE//6, Node.SIZE//6)),
+            }
+        return lights
 
     def __repr__(self):
         return f"TrafficLight{self.nodeId}"
@@ -726,13 +947,9 @@ class TrafficLight(Node):
     def __hash__(self):
         return super().__hash__()
 
-# test
-env = simpy.Environment()
-sim = Simulation(env=env)
-sim.initToyNetwork()
-
-# print(len(sim.net.nodeCollection))
-# print(len(sim.net.linkCollection))
-# print(len(sim.net.carCollection))
-
-sim.simulate(until=50)
+if __name__ == "__main__":
+    # test
+    env = simpy.Environment()
+    sim = Simulation(env=env, numInitVehs=50)
+    sim.initToyNetwork()
+    sim.simulate(until=100)

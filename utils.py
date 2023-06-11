@@ -3,10 +3,17 @@ class Color(object):
     """
     An Enum class to represent common RGB 3-channel colors
     """
-    RED   = (128,   0,   0)
+    DARK_RED = (256,0,   0)
+    RED   = (255,  21,  21)
     GREEN = (0  , 128,   0)
     BLUE  = (0  ,   0, 128)
     WHITE = (255, 255, 255)
     BLACK = (0  ,   0,   0)
+    PINK  = (255, 105, 180)
 
-# IO for network layout
+# Terminal logging -color
+from termcolor import colored
+
+def logging(msg:str,
+            color:str):
+    print(colored(msg, color))
