@@ -170,6 +170,23 @@ class Network(object):
             # draw traffic elements in this step function:
             self.__gameStep()
             time.sleep(self.dt)
+            ###################
+            # vehicle generator
+            ###################
+            for linkId, inflow in self.inflowLinkCollection.items():
+                if random.random() > 0.65:
+                    vehId = self.totalVeh 
+                    isSpawn = False
+                    while(not isSpawn):
+                        laneId = random.randint(a=0, b=self.linkCollection[linkId].numLanes-2)
+                        gridId = 0
+                        type = random.choice([i for i in range(1,6)])
+                        if self.linkCollection[linkId].trafficMatrix[laneId][gridId] == 0:
+                            # is empty, spawn the car
+                            self.addCar(vehId, linkId, laneId, gridId, type=type)
+                            logging(msg=f'car{vehId} spawns in the Network',
+                                    color='blue')
+                            isSpawn = True
             yield self.env.timeout(1)
 
     def __gameStep(self):
@@ -280,6 +297,21 @@ class Network(object):
                 if matrix[row, col] == 1:
                     color = Color.PINK
                     pygame.draw.rect(self.screen, color, (x, y, Link.GRIDSIZE, Link.GRIDSIZE))
+                elif matrix[row, col] == 2:
+                    color = Color.RED
+                    pygame.draw.rect(self.screen, color, (x, y, Link.GRIDSIZE, Link.GRIDSIZE))
+                elif matrix[row, col] == 3:
+                    color = Color.LIGHT_BLUE
+                    pygame.draw.rect(self.screen, color, (x, y, Link.GRIDSIZE, Link.GRIDSIZE))
+                elif matrix[row, col] == 4:
+                    color = Color.BLUE
+                    pygame.draw.rect(self.screen, color, (x, y, Link.GRIDSIZE, Link.GRIDSIZE))
+                elif matrix[row, col] == 5:
+                    color = Color.LIGHT_GREEN
+                    pygame.draw.rect(self.screen, color, (x, y, Link.GRIDSIZE, Link.GRIDSIZE))
+                elif matrix[row, col] == 6:
+                    color = Color.DARK_RED
+                    pygame.draw.rect(self.screen, color, (x, y, Link.GRIDSIZE, Link.GRIDSIZE))
                 # otherwise: black cell for empty cell
                 else:
                     color = Color.BLACK
@@ -311,21 +343,18 @@ class Network(object):
                 linkId = random.choice(list(self.linkCollection.keys()))
                 laneId = random.randint(a=0, b=self.linkCollection[linkId].numLanes-1)
                 gridId = random.randint(a=0, b=self.linkCollection[linkId].numGrids-10)
+                type = random.choice([i for i in range(1,6)])
                 if self.linkCollection[linkId].trafficMatrix[laneId][gridId] == 0:
                     # is empty, spawn the car
-                    self.addCar(vehId, linkId, laneId, gridId)
+                    self.addCar(vehId, linkId, laneId, gridId, type=type)
                     isSpawn = True
 
-    #TODO:
-    def genCars(self,):
-        pass
-
-    def addCar(self, vehId, linkId, laneId, gridId):
-        car = Car(self.env, self, vehId, linkId, laneId, gridId)
+    def addCar(self, vehId, linkId, laneId, gridId, type):
+        car = Car(self.env, self, vehId, linkId, laneId, gridId, type=type)
         self.numVehInSystem += 1
         self.totalVeh += 1
         self.linkCollection[linkId].trafficMatrix[laneId][gridId] = car
-        self.linkCollection[linkId].binaryMatrix[laneId, gridId] = 1
+        self.linkCollection[linkId].binaryMatrix[laneId, gridId] = type
         self.carCollection[vehId] = car
     
     def addNode(self, nodeId:int, position:Tuple[int,int], isExit:bool, isControlled:bool,):
@@ -433,6 +462,12 @@ class Car(object):
     
     MAX_SPEED = 3 
     IN_TrafficLight = True
+
+    T_Car = 1
+    T_Bus = 2
+    T_Taxi = 3
+    T_Heavy = 4
+    T_Medium = 5
     
     def __init__(self, 
                  env, 
@@ -441,7 +476,9 @@ class Car(object):
                  linkId:str, 
                  laneId:int, 
                  gridId:int,
-                 randomization:float=0.1):
+                 type:int=1,
+                 randomization:float=0.1,
+                 laneChangeThres:float=0.2):
         self.env = env
         self.net = net
         self.vehId = id
@@ -450,7 +487,9 @@ class Car(object):
         self.currentGrid = gridId
         self.currentSpeed = random.randint(a=2, b=Car.MAX_SPEED)
         self.randomization = randomization
-        
+        self.laneChangeThres = laneChangeThres
+        self.type = type
+
         # binary state indicators
         self.seeTrafficLight = False
         self.seeRedLight = True
@@ -465,15 +504,22 @@ class Car(object):
             # if not self.seeTrafficLight:
             if not self.seeTrafficLight:
                 # in the link, perform cellular automata logic
+                ##############################################
                 # 1. compare current speed with desired speed:
+                ##############################################
                 targetSpeed = min(self.currentSpeed+1, Car.MAX_SPEED)
+                ################################################
                 # 2. compare current speed with safety distance:
+                ################################################
                 targetSpeed = min(targetSpeed, self.__getSafetyDistance(targetSpeed))
+                ###################
                 # 3. randomization:
+                ###################
                 if random.random() < self.randomization:
                     targetSpeed = max(0, targetSpeed-1)
+                ####################
                 # 4. perform action:
-                # update the field inside the object
+                ####################
                 self.currentSpeed = targetSpeed
                 oldGrid = self.currentGrid
                 self.currentGrid += self.currentSpeed
@@ -483,8 +529,35 @@ class Car(object):
                         self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][oldGrid]
                     self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][oldGrid] = 0
                     # update the binary matrix
-                    self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, self.currentGrid] = 1
+                    self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, self.currentGrid] = self.type
                     self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, oldGrid] = 0
+                #################
+                # 5. lane change:
+                #################
+                if random.random() > self.laneChangeThres and self.currentSpeed > 0:
+                    if self.currentLane == 0 or (random.random() < 0.5 and self.currentLane == 1):
+                        # case1: in the leftmost lane, check its right lane
+                        # case2: in the middle lane, randomly change to its right lane
+                        if self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane+1, self.currentGrid] == 0:
+                            self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane+1][self.currentGrid] = \
+                                self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][self.currentGrid]
+                            self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][self.currentGrid] = 0
+                            # update the binary matrix
+                            self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane+1, self.currentGrid] = self.type
+                            self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, self.currentGrid] = 0  
+                            self.currentLane += 1
+                            self.currentSpeed = 0
+                        elif self.currentLane == 2 or (random.random() >= 0.5 and self.currentLane == 1):
+                        # case3: in the rightmost lane, check its left lane
+                        # case4: in the middle lane, randomly change to its left lane
+                            self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane-1][self.currentGrid] = \
+                                self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][self.currentGrid]
+                            self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][self.currentGrid] = 0
+                            # update the binary matrix
+                            self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane-1, self.currentGrid] = self.type
+                            self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, self.currentGrid] = 0  
+                            self.currentLane -= 1  
+                            self.currentSpeed = 0                          
                 # # warning: stop in the link
                 # if self.currentSpeed == 0:
                     # print(colored(f"{self} stops in link {self.currentLinkId, self.currentGrid} at {self.env.now}", 'red'))
@@ -493,10 +566,10 @@ class Car(object):
                 self.checkStatus()
             else:
                 if self.seeRedLight:
-                    currentLink = self.net.linkCollection[self.currentLinkId]
-                    currentNodeId = currentLink.destinNodeId
-                    currentNode = self.net.nodeCollection[currentNodeId]
-                    redLightTime = currentNode.greenTimes[currentNode.currentPhase]
+                    # currentLink = self.net.linkCollection[self.currentLinkId]
+                    # currentNodeId = currentLink.destinNodeId
+                    # currentNode = self.net.nodeCollection[currentNodeId]
+                    # redLightTime = currentNode.greenTimes[currentNode.currentPhase]
                     self.currentSpeed = 0
                     yield self.env.timeout(1)
                 else: # see green light:
@@ -505,7 +578,7 @@ class Car(object):
                     if self.net.linkCollection[self.nextLinkId].trafficMatrix[self.currentLane][0] == 0:
                         self.net.linkCollection[self.nextLinkId].trafficMatrix[self.currentLane][0] = self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][self.currentGrid]
                         self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][self.currentGrid] = 0
-                        self.net.linkCollection[self.nextLinkId].binaryMatrix[self.currentLane][0] = 1
+                        self.net.linkCollection[self.nextLinkId].binaryMatrix[self.currentLane][0] = self.type
                         self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane][self.currentGrid] = 0
                         self.currentLinkId = self.nextLinkId
                         self.currentGrid = 0
