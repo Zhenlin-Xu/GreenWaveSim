@@ -133,7 +133,21 @@ class Simulation(object):
 
     #TODO:
     def initpNeumaNetwork(self, numInitVehs=25):
-        pass
+        '''
+        initialize the real-world Athens road network of districts 2 and 3
+        20 nodes
+        '''
+        # initialize all the 8 nodes
+        nodeIds = [1,2,3,4,5,6,7,8,9,]
+        nodePositions = [
+            (self.screen_width//2-350//7*Link.GRIDSIZE, self.screen_width//2-140//7*Link.GRIDSIZE), #1
+            (self.screen_width//2, self.screen_width//2-140//7*Link.GRIDSIZE),                    #2
+            (self.screen_width//2+91//7*Link.GRIDSIZE-Node.SIZE//2, self.screen_height//2), 
+                         (self.screen_width//2+Link.GRIDSIZE*25+Node.SIZE//2, self.screen_height//2),]
+        for nodeId, nodePos in zip(nodeIds, nodePositions):
+            self.net.addTrafficLightNode(nodeId, position=nodePos, isExit=False, isControlled=True)
+        assert len(self.net.nodeCollection) == 9
+
 
 class Network(object):
        
