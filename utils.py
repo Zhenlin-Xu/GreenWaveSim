@@ -7,7 +7,7 @@ class Color(object):
     RED   = (255,  21,  21)
     GREEN = (0  , 128,   0)
     LIGHT_GREEN = (21, 128, 21)
-    BLUE  = (0  ,   0, 128)
+    BLUE  = ( 21,  21, 255)
     LIGHT_BLUE = (21, 21, 128)
     WHITE = (255, 255, 255)
     BLACK = (0  ,   0,   0)
