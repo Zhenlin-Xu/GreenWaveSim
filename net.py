@@ -55,20 +55,23 @@ class Network(object):
             # vehicle generator
             ###################
             for linkId, inflow in self.inflowLinkCollection.items():
-                if random.random() > 0.65:
-                    vehId = self.totalVeh 
-                    isSpawn = False
-                    while(not isSpawn):
-                        linkId = random.choice(list(self.linkCollection.keys()))
-                        laneId = random.randint(a=0, b=self.linkCollection[linkId].numLanes-1)
-                        gridId = 0 # random.randint(a=0, b=self.linkCollection[linkId].numGrids-1)
-                        type = random.choice([i for i in range(1,6)])
-                        if self.linkCollection[linkId].trafficMatrix[laneId][gridId] == 0:
-                            # is empty, spawn the car
-                            self.addCar(vehId, linkId, laneId, gridId, type=type)
-                            logging(msg=f'car{vehId} spawns in the Network',
+                link = self.linkCollection[linkId]
+                numLanes = link.numLanes
+                if numLanes == 5: # 主路
+                     for laneId in range(numLanes):
+                            if random.random() > 0.25 and link.binaryMatrix[laneId, 0] == 0:
+                                vehId = self.totalVeh
+                                typeId = random.choice([i for i in range(1,6)])
+                                self.addCar(vehId, linkId, laneId, 0, typeId)
+                                logging(msg=f'car{vehId} spawns in the Network',
                                     color='blue')
-                            isSpawn = True
+                elif numLanes == 1: # 支路
+                    if random.random() > 0.25 and link.binaryMatrix[0, 0] == 0:
+                        vehId = self.totalVeh
+                        typeId = random.choice([i for i in range(1,6)])
+                        self.addCar(vehId, linkId, 0, 0, typeId)
+                        logging(msg=f'car{vehId} spawns in the Network',
+                            color='blue')
             yield self.env.timeout(1)
 
     def __gameStep(self):
@@ -123,7 +126,7 @@ class Network(object):
         # draw nodes:
         #############
         for nodeId, node in self.nodeCollection.items():
-            pygame.draw.rect(self.screen, Color.WHITE, node.center2corner())
+            pygame.draw.rect(self.screen, Color.BLACK, node.center2corner())
 
         #######################
         # add text information:
@@ -170,7 +173,7 @@ class Network(object):
                     pygame.draw.rect(self.screen, color, (x, y, LINK_GRIDSIZE, LINK_GRIDSIZE))
                 # otherwise: black cell for empty cell
                 else:
-                    color = Color.BLACK
+                    color = Color.GREY
                     pygame.draw.rect(self.screen, color, (x, y, LINK_GRIDSIZE, LINK_GRIDSIZE), width=0)
 
     def __draw_text(self, 
@@ -197,18 +200,24 @@ class Network(object):
         factors = {1:160.803, 2:926.564, 3:223.166, 4:880.849, 5:680.631}
         total_emission = 0
         for typeId, distance in self.distances.items():
-            total_emission += distance*7*factors[typeId]
-            textLine = f"CO2 Emission by Type {type[typeId]}: {distance*7*factors[typeId]}"
+            vehType_emission = distance*7.5*factors[typeId]
+            total_emission += vehType_emission
+            textLine = f"CO2 Emission by Type {type[typeId]}: {vehType_emission/1000:10.0f}"
             text_surface = font.render(textLine, True, font_color)
             text_rect = text_surface.get_rect()
             text_rect.topleft = (10, 15*typeId + 25)
             self.screen.blit(text_surface, text_rect)
         
-        textLine3 = f"CO2 Emission in total: {total_emission}"
+        
+        textLine3 = f"CO2 Emission in total: {total_emission/1000:10.0f}"
         text_surface3 = font.render(textLine3, True, font_color)
         text_rect3 = text_surface3.get_rect()
         text_rect3.topleft = (10, 115)
         self.screen.blit(text_surface3, text_rect3)
+
+        if self.env.now == 3599:
+            logging(msg=f"CO2 Emission in total: {total_emission/1000:10.0f}",
+                    color='yellow') 
 
     def initCars(self, numInitVehs):
         for vehId in range(numInitVehs):
@@ -217,10 +226,10 @@ class Network(object):
                 linkId = random.choice(list(self.linkCollection.keys()))
                 laneId = random.randint(a=0, b=self.linkCollection[linkId].numLanes-1)
                 gridId = random.randint(a=0, b=self.linkCollection[linkId].numGrids-1)
-                type = random.choice([i for i in range(1,6)])
+                typeId = random.choice([i for i in range(1,6)])
                 if self.linkCollection[linkId].trafficMatrix[laneId][gridId] == 0:
                     # is empty, spawn the car
-                    self.addCar(vehId, linkId, laneId, gridId, type=type)
+                    self.addCar(vehId, linkId, laneId, gridId, typeId)
                     isSpawn = True
 
     def addCar(self, vehId, linkId, laneId, gridId, type):
@@ -294,6 +303,7 @@ class TrafficLight(Node):
         self.numPhases = None
         self.greenTimes = None
         self.direction = OrderedDict()
+        self.leftTurnThreshold = 0.8
         self.setDirections(tf_Directions[self.nodeId])
         self.setPhase(tf_Phases[self.nodeId])
         self.phaseUsedTime = 0
@@ -323,18 +333,19 @@ class TrafficLight(Node):
                 self.upstreamB_Link = self.net.linkCollection[self.upstreamB_LinkId]
             
             # Case1: two phases: <-
-            if self.nodeId in [1,2,4,]:
+            if self.nodeId in [1,2,4]:
                 numLanes = 5
                 # Main flow phase
                 if self.currentPhase == 0:
                     # Main flow leg
                     for laneId in range(5):
                         isFront, car = self.upstreamM_Link.getFrontCarLane(laneId)
-                        if isFront and laneId == 0: # green // turn
+                        if isFront and laneId == 4: # green // turn
                                 car.seeRedLight = False
                                 car.seeTrafficLight = True
                                 car.nextLinkId = self.downstreamB_LinkId 
-                        elif isFront and laneId > 0: # green // straight
+                                car.nextLane = 0
+                        elif isFront and laneId < 4: # green // straight
                                 car.seeRedLight = False
                                 car.seeTrafficLight = True
                                 car.nextLinkId = self.downstreamM_LinkId
@@ -377,7 +388,7 @@ class TrafficLight(Node):
                         if isFront and laneId == 0: # green // turn
                                 car.seeRedLight = False
                                 car.seeTrafficLight = True
-                                car.nextLinkId = self.downstreamB_LinkId 
+                                car.nextLinkId = self.downstreamM_LinkId
                         elif isFront and laneId > 0: # green // straight
                                 car.seeRedLight = False
                                 car.seeTrafficLight = True
@@ -388,7 +399,28 @@ class TrafficLight(Node):
                         car.currentSpeed = 0
                         car.seeRedLight = True
                         car.seeTrafficLight = True
-                        car.nextLinkId = self.downstreamM_LinkId
+                        car.nextLinkId = self.downstreamB_LinkId
+                elif self.currentPhase == 1:
+                    for laneId in range(5):
+                        # Main flow leg
+                        isFront, car = self.upstreamM_Link.getFrontCarLane(laneId)
+                        if isFront and laneId == 0: # green // turn
+                                car.currentSpeed = 0
+                                car.seeRedLight = True
+                                car.seeTrafficLight = True
+                                car.nextLinkId = self.downstreamB_LinkId 
+                        elif isFront and laneId > 0: # green // straight
+                                car.currentSpeed = 0
+                                car.seeRedLight = True
+                                car.seeTrafficLight = True
+                                car.nextLinkId = self.downstreamM_LinkId
+                    # Branch flow leg
+                    isFront, car = self.upstreamB_Link.getFrontCarLane(0)
+                    if isFront:
+                        car.seeRedLight = False
+                        car.seeTrafficLight = True
+                        car.nextLinkId = self.downstreamB_LinkId
+
             # Case3: one phase: node 3            
             elif self.nodeId == 3:
                 numLanes = 5
@@ -399,7 +431,10 @@ class TrafficLight(Node):
                     if isFront and laneId == 0: # green // turn
                             car.seeRedLight = False
                             car.seeTrafficLight = True
-                            car.nextLinkId = self.downstreamB_LinkId 
+                            if random.random() > self.leftTurnThreshold:
+                                car.nextLinkId = self.downstreamB_LinkId 
+                            else:
+                                 car.nextLinkId = self.downstreamM_LinkId
                     elif isFront and laneId > 0: # green // straight
                             car.seeRedLight = False
                             car.seeTrafficLight = True
@@ -451,7 +486,7 @@ class TrafficLight(Node):
                     else:
                         self.currentPhase = 1     
                 # reset the phaseTime and phaseTotalTime
-                self.phaseTime = 0
+                self.phaseUsedTime = 0
                 self.phaseTotalTime = self.greenTimes[self.currentPhase]
                 print(self, f"change phase {oldPhase} to new phase {self.currentPhase} at {self.env.now}")       
 

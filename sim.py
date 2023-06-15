@@ -21,7 +21,7 @@ class Simulation(object):
                  env,
                  screen_width :int=800,
                  screen_height:int=600,
-                 pauseTime:float  =0.05,
+                 pauseTime:float  =0.01,
                  numInitVehs:int  =50,
                 ):
         pygame.init()

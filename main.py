@@ -7,4 +7,4 @@ if __name__ == "__main__":
     env = simpy.Environment()
     sim = Simulation(env=env, numInitVehs=10, screen_height=SCREEN_HEIGHT, screen_width=SCREEN_WIDTH-100)
     sim.initpNeumaNetwork()
-    sim.simulate(until=1800)
+    sim.simulate(until=3600)
