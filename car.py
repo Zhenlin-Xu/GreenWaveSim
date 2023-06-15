@@ -1,7 +1,7 @@
 import random
 import numpy as np
 from athens import LINK_OUT
-from termcolor import colored
+from utils import logging
 
 class Car(object):
     
@@ -47,7 +47,6 @@ class Car(object):
         
     def run(self):
         while (not self.leaveNetwork):
-            print(self.currentLinkId, self.currentLane, self.currentGrid, self.seeRedLight, self.seeTrafficLight)
             if not self.seeTrafficLight:
                 ##############################################
                 # in the link, perform cellular automata logic
@@ -78,51 +77,52 @@ class Car(object):
                     # update the binary matrix
                     self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, self.currentGrid] = self.type
                     self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, oldGrid] = 0
+                self.net.distances[self.type] += self.currentSpeed    
                 #################
                 # 5. lane change:
                 #################
-                # if self.net.linkCollection[self.currentLinkId].numLanes > 1:
-                #     if random.random() > self.laneChangeThres and self.currentSpeed > 0:
-                #         if self.currentLane == 0 or (random.random() < 0.5 and self.currentLane == 1):
-                #             # case1: in the leftmost lane, check its right lane
-                #             # case2: in the middle lane, randomly change to its right lane
-                #             if self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane+1, self.currentGrid] == 0:
-                #                 self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane+1][self.currentGrid] = \
-                #                     self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][self.currentGrid]
-                #                 self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][self.currentGrid] = 0
-                #                 # update the binary matrix
-                #                 self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane+1, self.currentGrid] = self.type
-                #                 self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, self.currentGrid] = 0  
-                #                 self.currentLane += 1
-                #                 self.currentSpeed = 0
-                #             elif self.currentLane == 2 or (random.random() >= 0.5 and self.currentLane == 1):
-                #             # case3: in the rightmost lane, check its left lane
-                #             # case4: in the middle lane, randomly change to its left lane
-                #                 self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane-1][self.currentGrid] = \
-                #                     self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][self.currentGrid]
-                #                 self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][self.currentGrid] = 0
-                #                 # update the binary matrix
-                #                 self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane-1, self.currentGrid] = self.type
-                #                 self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, self.currentGrid] = 0  
-                #                 self.currentLane -= 1  
-                #                 self.currentSpeed = 0                          
+                if self.net.linkCollection[self.currentLinkId].numLanes > 1:
+                    if random.random() > self.laneChangeThres and self.currentSpeed > 0:
+                        if self.currentLane == 0 or (random.random() < 0.5 and self.currentLane == 1):
+                            # case1: in the leftmost lane, check its right lane
+                            # case2: in the middle lane, randomly change to its right lane
+                            if self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane+1, self.currentGrid] == 0:
+                                self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane+1][self.currentGrid] = \
+                                    self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][self.currentGrid]
+                                self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][self.currentGrid] = 0
+                                # update the binary matrix
+                                self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane+1, self.currentGrid] = self.type
+                                self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, self.currentGrid] = 0  
+                                self.currentLane += 1
+                                # self.currentSpeed = 0
+                                self.net.distances[self.type] += 1    
+
+                            elif self.currentLane == 2 or (random.random() >= 0.5 and self.currentLane == 1):
+                            # case3: in the rightmost lane, check its left lane
+                            # case4: in the middle lane, randomly change to its left lane
+                                self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane-1][self.currentGrid] = \
+                                    self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][self.currentGrid]
+                                self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][self.currentGrid] = 0
+                                # update the binary matrix
+                                self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane-1, self.currentGrid] = self.type
+                                self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, self.currentGrid] = 0  
+                                self.currentLane -= 1  
+                                # self.currentSpeed = 0      
+                                self.net.distances[self.type] += 1    
+                    
                 # # warning: stop in the link
                 # if self.currentSpeed == 0:
-                    # print(colored(f"{self} stops in link {self.currentLinkId, self.currentGrid} at {self.env.now}", 'red'))
+                #     logging(msg=f"{self} stops in link {self.currentLinkId, self.currentGrid} at {self.env.now}",
+                #             color='red')
+                # update time    
                 yield self.env.timeout(1)
                 # check status
                 self.checkStatus()
             else:
                 if self.seeRedLight:
-                    print('Red')
-                    # currentLink = self.net.linkCollection[self.currentLinkId]
-                    # currentNodeId = currentLink.destinNodeId
-                    # currentNode = self.net.nodeCollection[currentNodeId]
-                    # redLightTime = currentNode.greenTimes[currentNode.currentPhase]
                     self.currentSpeed = 0
                     yield self.env.timeout(1)
                 else: # see green light:
-                    print('Green')
                     passTime = 1
                     yield self.env.timeout(passTime)
                     if self.nextLane == None:
@@ -148,10 +148,11 @@ class Car(object):
                             self.seeTrafficLight = False
                             self.seeRedLight = False 
                             self.nextLane = None
+                # check status 
                 self.checkStatus()
 
-
-        print(colored(f"{self.__str__()} leaves Network", 'green'))
+        logging(msg=f"{self.__str__()} leaves Network",
+                color='green')
         self.net.carCollection.pop(self.vehId)
         self.net.linkCollection[self.currentLinkId].trafficMatrix[self.currentLane][self.currentGrid] = 0
         self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, self.currentGrid] = 0

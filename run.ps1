@@ -1,3 +1,3 @@
 clear
-python .\sim.py
+python .\main.py
 # sleep 1

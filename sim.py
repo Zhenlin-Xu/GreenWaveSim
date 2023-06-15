@@ -34,6 +34,7 @@ class Simulation(object):
         self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
         self.net = Network(env, screen=self.screen, dt=pauseTime)
         self.action = self.env.process(self.render())
+        self.is_paused = False
 
     def simulate(self, until):
         """
@@ -54,6 +55,11 @@ class Simulation(object):
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     sys.quit()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_SPACE:
+                        self.is_paused = not self.is_paused
+                        if self.is_paused:
+                            time.sleep(2)
             time.sleep(self.pauseTime)
             yield self.env.timeout(1)
 
@@ -129,10 +135,3 @@ class Simulation(object):
         assert self.net.numVehInSystem == self.numInitVehs
         logging(msg=f"LOGGING: initialize {self.numInitVehs:2.0f} cars into network",
                 color='green')
-
-if __name__ == "__main__":
-    # test
-    env = simpy.Environment()
-    sim = Simulation(env=env, numInitVehs=10, screen_height=SCREEN_HEIGHT, screen_width=SCREEN_WIDTH-100)
-    sim.initpNeumaNetwork()
-    sim.simulate(until=100)

@@ -5,6 +5,7 @@ class Color(object):
     """
     DARK_RED = (256,0,   0)
     RED   = (255,  21,  21)
+    YELLOW= (255, 255,   0)
     GREEN = (0  , 128,   0)
     LIGHT_GREEN = (21, 128, 21)
     BLUE  = ( 21,  21, 255)

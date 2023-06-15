@@ -6,9 +6,8 @@ from pygame.locals import *
 
 from typing import Tuple, List
 from collections import OrderedDict
-from utils import Color
-from athens import node_CenterPositions, link_Infos, tf_Directions, tf_Phases
-from athens import LINK_GRIDSIZE, NODE_HEIGHT, NODE_WIDTH, NODE_SIZE, SCREEN_HEIGHT, SCREEN_WIDTH, LINK_IN, LINK_OUT
+from utils import Color, logging
+from athens import *
 from car import Car
 
 class Network(object):
@@ -31,15 +30,21 @@ class Network(object):
         self.nodeCollection = OrderedDict()
         self.trafficLightCollection = OrderedDict()
         self.carCollection = OrderedDict()
-        self.linkPairCollection = OrderedDict()
         self.matrixCollection = OrderedDict()
         self.numVehInSystem = 0
         self.totalVeh = 0 
+        self.distances = {
+            T_Car    : 0, 
+            T_Bus    : 0, 
+            T_Taxi   : 0, 
+            T_Heavy  : 0, 
+            T_Medium : 0,
+        }
         # discrete simulation process
         self.env = env
         self.dt  = dt
         self.action = self.env.process(self.render())
-    
+
     def render(self):
         # a network process that visualizes the network:
         while True:
@@ -49,20 +54,21 @@ class Network(object):
             ###################
             # vehicle generator
             ###################
-            # for linkId, inflow in self.inflowLinkCollection.items():
-            #     if random.random() > 0.65:
-            #         vehId = self.totalVeh 
-            #         isSpawn = False
-            #         while(not isSpawn):
-            #             laneId = random.randint(a=0, b=self.linkCollection[linkId].numLanes-2)
-            #             gridId = 0
-            #             type = random.choice([i for i in range(1,6)])
-            #             if self.linkCollection[linkId].trafficMatrix[laneId][gridId] == 0:
-            #                 # is empty, spawn the car
-            #                 self.addCar(vehId, linkId, laneId, gridId, type=type)
-            #                 logging(msg=f'car{vehId} spawns in the Network',
-            #                         color='blue')
-            #                 isSpawn = True
+            for linkId, inflow in self.inflowLinkCollection.items():
+                if random.random() > 0.65:
+                    vehId = self.totalVeh 
+                    isSpawn = False
+                    while(not isSpawn):
+                        linkId = random.choice(list(self.linkCollection.keys()))
+                        laneId = random.randint(a=0, b=self.linkCollection[linkId].numLanes-1)
+                        gridId = 0 # random.randint(a=0, b=self.linkCollection[linkId].numGrids-1)
+                        type = random.choice([i for i in range(1,6)])
+                        if self.linkCollection[linkId].trafficMatrix[laneId][gridId] == 0:
+                            # is empty, spawn the car
+                            self.addCar(vehId, linkId, laneId, gridId, type=type)
+                            logging(msg=f'car{vehId} spawns in the Network',
+                                    color='blue')
+                            isSpawn = True
             yield self.env.timeout(1)
 
     def __gameStep(self):
@@ -157,7 +163,7 @@ class Network(object):
                     color = Color.BLUE
                     pygame.draw.rect(self.screen, color, (x, y, LINK_GRIDSIZE, LINK_GRIDSIZE))
                 elif binaryMatrix[row, col] == 5:
-                    color = Color.LIGHT_GREEN
+                    color = Color.YELLOW
                     pygame.draw.rect(self.screen, color, (x, y, LINK_GRIDSIZE, LINK_GRIDSIZE))
                 elif binaryMatrix[row, col] == 6:
                     color = Color.DARK_RED
@@ -185,6 +191,24 @@ class Network(object):
         text_rect2.topleft = (10, 25)
         self.screen.blit(text_surface1, text_rect1)
         self.screen.blit(text_surface2, text_rect2)
+
+        type = {1:"Car", 2:"Bus", 3:"Taxi", 4:"H_Veh", 5:"M_Veh"}
+        # HBEFA Emission factors
+        factors = {1:160.803, 2:926.564, 3:223.166, 4:880.849, 5:680.631}
+        total_emission = 0
+        for typeId, distance in self.distances.items():
+            total_emission += distance*7*factors[typeId]
+            textLine = f"CO2 Emission by Type {type[typeId]}: {distance*7*factors[typeId]}"
+            text_surface = font.render(textLine, True, font_color)
+            text_rect = text_surface.get_rect()
+            text_rect.topleft = (10, 15*typeId + 25)
+            self.screen.blit(text_surface, text_rect)
+        
+        textLine3 = f"CO2 Emission in total: {total_emission}"
+        text_surface3 = font.render(textLine3, True, font_color)
+        text_rect3 = text_surface3.get_rect()
+        text_rect3.topleft = (10, 115)
+        self.screen.blit(text_surface3, text_rect3)
 
     def initCars(self, numInitVehs):
         for vehId in range(numInitVehs):
@@ -218,9 +242,9 @@ class Network(object):
 
     def addLink(self,linkId, lengthLane, numLanes, originNodeId, destinNodeId, type):
         link = Link(linkId, lengthLane, numLanes, originNodeId, destinNodeId, type)
-        if type == 1: # inflow
+        if type == LINK_IN: # inflow
             self.inflowLinkCollection[linkId] = link
-        elif type == 2: # outflow
+        elif type == LINK_OUT: # outflow
             self.outflowLinkCollection[linkId]= link
         self.linkCollection[linkId] = link
 
@@ -273,7 +297,7 @@ class TrafficLight(Node):
         self.setDirections(tf_Directions[self.nodeId])
         self.setPhase(tf_Phases[self.nodeId])
         self.phaseUsedTime = 0
-        self.phaseTotalTime = None
+        self.phaseTotalTime = self.greenTimes[self.currentPhase]
         self.env = env
         self.action = self.env.process(self.trafficLightControl())
 

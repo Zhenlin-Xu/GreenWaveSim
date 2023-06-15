@@ -1,2 +1,2 @@
 clear
-python sim.py
+python main.py

@@ -9,7 +9,14 @@ LINK_NORMAL = 0
 LINK_IN  = 1
 LINK_OUT = 2
 
-# the size of the pygame window
+# car types:
+T_Car = 1
+T_Bus = 2
+T_Taxi = 3
+T_Heavy = 4
+T_Medium = 5
+
+# Size of the pygame window
 SCREEN_WIDTH = 1000
 SCREEN_HEIGHT= 600
 
@@ -90,6 +97,7 @@ tf_Directions = {
     8: [9,7,33,None],
     9: [41,8,1,34]
 }
+
 tf_Phases = {
     1: (2, [39,39]),
     2: (2, [39,39]),
