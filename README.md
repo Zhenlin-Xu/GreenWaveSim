@@ -1,6 +1,8 @@
 # GreenWaveSim
 A discrete event traffic simulation for green-wave control
 
+![](img/screenshot.PNG)
+
 # Structure
 - `main.py`: main entry of simulation
 - `athens.py`: calibrations of properties (nodes, link, trafficLight and constants) in Athens. 
