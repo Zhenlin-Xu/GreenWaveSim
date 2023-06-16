@@ -49,7 +49,6 @@ class Car(object):
         while (not self.leaveNetwork):
             # print(self.currentLinkId, self.currentLane, self.currentGrid)
             if not self.seeTrafficLight:
-                self.net.distances[self.type] += 5
                 ##############################################
                 # in the link, perform cellular automata logic
                 ##############################################
@@ -123,11 +122,9 @@ class Car(object):
             else:
                 if self.seeRedLight:
                     self.currentSpeed = 0
-                    self.net.distances[self.type] += 5
                     yield self.env.timeout(1)
                 else: # see green light:
                     passTime = 1
-                    self.net.distances[self.type] += 5
                     yield self.env.timeout(passTime)
                     if self.nextLane == None:
                         if self.net.linkCollection[self.nextLinkId].trafficMatrix[self.currentLane][0] == 0:

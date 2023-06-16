@@ -1,4 +1,5 @@
 import time
+import pickle
 import random
 import numpy as np
 import pygame
@@ -33,6 +34,12 @@ class Network(object):
         self.matrixCollection = OrderedDict()
         self.numVehInSystem = 0
         self.totalVeh = 0 
+        self.total_emission = 0
+        self.car_emission = 0
+        self.bus_emission = 0
+        self.taxi_emission = 0
+        self.heavy_emission = 0
+        self.medium_emission = 0
         self.distances = {
             T_Car    : 0, 
             T_Bus    : 0, 
@@ -51,27 +58,79 @@ class Network(object):
             # draw traffic elements in this step function:
             self.__gameStep()
             time.sleep(self.dt)
+            if self.env.now == 1799:
+                type = {1:"Car", 2:"Bus", 3:"Taxi", 4:"H_Veh", 5:"M_Veh"}
+                logging(msg=f"CO2 Emission by Type Car: {self.car_emission:10.0f}",
+                        color='yellow')
+                logging(msg=f"CO2 Emission by Type Bus: {self.bus_emission:10.0f}",
+                        color='yellow')                
+                logging(msg=f"CO2 Emission by Type Taxi: {self.taxi_emission:10.0f}",
+                        color='yellow')
+                logging(msg=f"CO2 Emission by Type H_Veh: {self.heavy_emission:10.0f}",
+                        color='yellow')
+                logging(msg=f"CO2 Emission by Type M_Veh: {self.medium_emission:10.0f}",
+                        color='yellow')                
+                logging(msg=f"CO2 Emission in total: {self.total_emission:10.0f}",
+                        color='yellow') 
+                with open("./emission.pickle", 'rb') as file:
+                     emission_dict = pickle.load(file)
+                emission_dict['car'].append(self.car_emission)
+                emission_dict['bus'].append(self.bus_emission)
+                emission_dict['taxi'].append(self.taxi_emission)
+                emission_dict['heavy'].append(self.heavy_emission)
+                emission_dict['medium'].append(self.medium_emission)
+                with open("./emission.pickle", 'wb') as file:
+                    pickle.dump(emission_dict, file)
+
             ###################
             # vehicle generator
             ###################
+            # for linkId, inflow in self.inflowLinkCollection.items():
+            #     link = self.linkCollection[linkId]
+            #     numLanes = link.numLanes
+            #     if numLanes == 5: # 主路
+            #          for laneId in range(numLanes):
+            #                 if random.random() > 0.75 and link.binaryMatrix[laneId, 0] == 0:
+            #                     vehId = self.totalVeh
+            #                     if random.random() > 0.8:
+            #                         typeId = T_Car
+            #                     else:
+            #                         typeId = random.choice([i for i in range(2,6)])
+            #                     self.addCar(vehId, linkId, laneId, 0, typeId)
+            #                     logging(msg=f'car{vehId} spawns in the Network',
+            #                         color='blue')
+            #     elif numLanes == 1: # 支路
+            #         if random.random() > 0.95 and link.binaryMatrix[0, 0] == 0:
+            #             vehId = self.totalVeh
+            #             typeId = random.choice([i for i in range(1,6)])
+            #             self.addCar(vehId, linkId, 0, 0, typeId)
+            #             logging(msg=f'car{vehId} spawns in the Network',
+            #                 color='blue')
             for linkId, inflow in self.inflowLinkCollection.items():
-                link = self.linkCollection[linkId]
-                numLanes = link.numLanes
-                if numLanes == 5: # 主路
-                     for laneId in range(numLanes):
-                            if random.random() > 0.25 and link.binaryMatrix[laneId, 0] == 0:
-                                vehId = self.totalVeh
-                                typeId = random.choice([i for i in range(1,6)])
-                                self.addCar(vehId, linkId, laneId, 0, typeId)
+                if random.random() > 0.7:
+                        vehId = self.totalVeh 
+                        isSpawn = False
+                        while(not isSpawn):
+                            linkId = random.choice(list(self.linkCollection.keys()))
+                            laneId = random.randint(a=0, b=self.linkCollection[linkId].numLanes-1)
+                            gridId = 0 # random.randint(a=0, b=self.linkCollection[linkId].numGrids-1)
+                            prob_Type = random.random()
+                            if prob_Type <= 0.90:
+                                type = T_Car
+                            elif prob_Type <= 0.95:
+                                type = T_Taxi
+                            elif prob_Type <= 0.96:
+                                type = T_Heavy
+                            elif prob_Type <= 0.985:
+                                 type = T_Bus
+                            else:
+                                 type = T_Medium
+                            if self.linkCollection[linkId].trafficMatrix[laneId][gridId] == 0:
+                                # is empty, spawn the car
+                                self.addCar(vehId, linkId, laneId, gridId, type=type)
                                 logging(msg=f'car{vehId} spawns in the Network',
-                                    color='blue')
-                elif numLanes == 1: # 支路
-                    if random.random() > 0.25 and link.binaryMatrix[0, 0] == 0:
-                        vehId = self.totalVeh
-                        typeId = random.choice([i for i in range(1,6)])
-                        self.addCar(vehId, linkId, 0, 0, typeId)
-                        logging(msg=f'car{vehId} spawns in the Network',
-                            color='blue')
+                                        color='blue')
+                                isSpawn = True
             yield self.env.timeout(1)
 
     def __gameStep(self):
@@ -200,24 +259,32 @@ class Network(object):
         factors = {1:160.803, 2:926.564, 3:223.166, 4:880.849, 5:680.631}
         total_emission = 0
         for typeId, distance in self.distances.items():
-            vehType_emission = distance*7.5*factors[typeId]
+            vehType_emission = distance*7*factors[typeId]/1000
             total_emission += vehType_emission
-            textLine = f"CO2 Emission by Type {type[typeId]}: {vehType_emission/1000:10.0f}"
+            if typeId == T_Car:
+                 self.car_emission = vehType_emission
+            elif typeId == T_Bus:
+                 self.bus_emission = vehType_emission
+            elif typeId == T_Taxi:
+                 self.taxi_emission = vehType_emission
+            elif typeId == T_Heavy:
+                 self.heavy_emission = vehType_emission
+            elif typeId == T_Medium:
+                 self.medium_emission = vehType_emission                        
+            
+            textLine = f"CO2 Emission by Type {type[typeId]}: {vehType_emission:10.0f}"
             text_surface = font.render(textLine, True, font_color)
             text_rect = text_surface.get_rect()
             text_rect.topleft = (10, 15*typeId + 25)
             self.screen.blit(text_surface, text_rect)
         
-        
-        textLine3 = f"CO2 Emission in total: {total_emission/1000:10.0f}"
+        self.total_emission = total_emission
+        textLine3 = f"CO2 Emission in total: {total_emission:10.0f}"
         text_surface3 = font.render(textLine3, True, font_color)
         text_rect3 = text_surface3.get_rect()
         text_rect3.topleft = (10, 115)
         self.screen.blit(text_surface3, text_rect3)
 
-        if self.env.now == 3599:
-            logging(msg=f"CO2 Emission in total: {total_emission/1000:10.0f}",
-                    color='yellow') 
 
     def initCars(self, numInitVehs):
         for vehId in range(numInitVehs):
