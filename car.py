@@ -78,7 +78,7 @@ class Car(object):
                     # update the binary matrix
                     self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, self.currentGrid] = self.type
                     self.net.linkCollection[self.currentLinkId].binaryMatrix[self.currentLane, oldGrid] = 0
-                self.net.distances[self.type] += self.currentSpeed    
+                self.net.distances[self.type] += self.currentSpeed + 0.5   
                 #################
                 # 5. lane change:
                 #################
