@@ -107,7 +107,7 @@ class Network(object):
             #             logging(msg=f'car{vehId} spawns in the Network',
             #                 color='blue')
             for linkId, inflow in self.inflowLinkCollection.items():
-                if random.random() > 0.7:
+                if random.random() > 0.76:
                         vehId = self.totalVeh 
                         isSpawn = False
                         while(not isSpawn):
